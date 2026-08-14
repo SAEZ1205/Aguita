@@ -2,9 +2,7 @@ package com.saez.aguita;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlarmManager;
 import android.app.AlertDialog;
-import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -15,9 +13,9 @@ import android.os.Bundle;
 import android.speech.RecognizerIntent;
 import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -25,7 +23,6 @@ import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -37,204 +34,48 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
-    private static final int REQ_SPEECH = 9001;
-    private static final int REQ_AUDIO = 9002;
-    private final int bg = Color.rgb(6, 8, 32);
-    private final int card = Color.rgb(19, 23, 58);
-    private final int purple = Color.rgb(130, 83, 255);
-    private final int blue = Color.rgb(73, 145, 255);
-    private final int pink = Color.rgb(236, 91, 145);
-    private LinearLayout root;
-    private TextToSpeech tts;
-    private EditText chatInput;
-    private TextView chatLog;
-    private int speechMode = 0; // 1 chat, 2 reminder
+    private static final int SPEECH=9001,AUDIO=9002;
+    private final int cream=Color.rgb(250,246,247), purple=Color.rgb(133,91,181), purpleDark=Color.rgb(79,54,112), text=Color.rgb(55,45,60), soft=Color.rgb(242,231,244), blue=Color.rgb(85,137,202);
+    private LinearLayout root; private TextToSpeech tts; private TextView chatLog; private EditText chatInput; private int voiceMode=0;
+    private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}    
+    private GradientDrawable bg(int c,int r){GradientDrawable g=new GradientDrawable();g.setColor(c);g.setCornerRadius(dp(r));return g;}
+    private TextView tx(String s,int sp,int c,boolean b){TextView v=new TextView(this);v.setText(s);v.setTextSize(sp);v.setTextColor(c);if(b)v.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return v;}
+    private Button bt(String s,int c){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setTextSize(17);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setBackground(bg(c,20));b.setMinHeight(dp(58));return b;}
+    private LinearLayout card(){LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(18),dp(18),dp(18),dp(18));c.setBackground(bg(Color.WHITE,24));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,dp(14));c.setLayoutParams(p);c.setElevation(dp(2));return c;}
 
-    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+    @Override protected void onCreate(Bundle b){super.onCreate(b);Prefs.ensureDefaults(this);tts=new TextToSpeech(this,this);permissions();home();}
+    @Override public void onInit(int s){if(s==TextToSpeech.SUCCESS){tts.setLanguage(new Locale("es","PE"));tts.setSpeechRate(.88f);tts.setPitch(.94f);}}
+    @Override protected void onDestroy(){if(tts!=null){tts.stop();tts.shutdown();}super.onDestroy();}
+    private void speak(String s){if(tts!=null)tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"susana");}
+    private void permissions(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},55);}
 
-    @Override protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        Prefs.ensureDefaults(this);
-        tts = new TextToSpeech(this, this);
-        requestNeededPermissions();
-        showHome();
-    }
+    private void base(String title,String sub){ScrollView sv=new ScrollView(this);sv.setFillViewport(true);sv.setBackgroundColor(cream);root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(22),dp(18),dp(28));sv.addView(root);root.addView(tx(title,30,purpleDark,true));TextView st=tx(sub,14,Color.rgb(105,91,108),false);st.setPadding(0,dp(3),0,dp(16));root.addView(st);setContentView(sv);}
+    private ImageView avatar(int size){ImageView i=new ImageView(this);i.setImageResource(R.drawable.susana_avatar);i.setScaleType(ImageView.ScaleType.CENTER_CROP);i.setBackground(bg(soft,100));i.setClipToOutline(true);i.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);i.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return i;}
+    private void nav(){LinearLayout n=new LinearLayout(this);n.setGravity(Gravity.CENTER);String[] a={"Inicio","Hablar","Recordar","Perfil"};for(int i=0;i<4;i++){Button b=bt(a[i],Color.rgb(186,160,204));b.setTextSize(12);final int k=i;b.setOnClickListener(v->{if(k==0)home();else if(k==1)chat();else if(k==2)reminders();else profile();});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(50),1);p.setMargins(dp(2),0,dp(2),0);n.addView(b,p);}root.addView(n);}
 
-    @Override public void onInit(int status) {
-        if (status == TextToSpeech.SUCCESS) tts.setLanguage(new Locale("es", "PE"));
-    }
+    private boolean birthday(){Calendar c=Calendar.getInstance();return c.get(Calendar.MONTH)==Calendar.DECEMBER&&c.get(Calendar.DAY_OF_MONTH)==6;}
+    private void home(){base("SUSANA 💜","Tu compañera siempre: habla conmigo, cuéntame tu día o pídeme que recuerde algo.");LinearLayout h=card();h.setGravity(Gravity.CENTER_HORIZONTAL);h.addView(avatar(145));TextView hello=tx(birthday()?"¡Feliz cumpleaños, mi amor! 🎂💜":"Hola, mi amor 💜",25,purpleDark,true);hello.setGravity(Gravity.CENTER);hello.setPadding(0,dp(14),0,dp(5));h.addView(hello);TextView line=tx(birthday()?"Hoy quiero recordarte lo fuerte y especial que eres. Espero que te consientan mucho.":"Estoy aquí para escucharte y ayudarte con lo importante, sin complicarte con comandos.",16,text,false);line.setGravity(Gravity.CENTER);h.addView(line);Button talk=bt("🎙️ Hablar con Susana",purple);talk.setOnClickListener(v->{chat();startVoice(1);});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(16);h.addView(talk,p);Button rec=bt("🔔 Recuérdame algo",blue);rec.setOnClickListener(v->startVoice(2));LinearLayout.LayoutParams q=new LinearLayout.LayoutParams(-1,-2);q.topMargin=dp(9);h.addView(rec,q);root.addView(h);
+        LinearLayout quick=card();quick.addView(tx("Hoy contigo",20,purpleDark,true));quick.addView(tx("💧 Agua: "+Prefs.todayMl(this)+" / "+Prefs.targetMl(this)+" ml\n🔔 "+ReminderStore.count(this)+" recordatorio(s) guardados\n🎂 Cumpleaños: 6 de diciembre",15,text,false));Button water=bt("💧 Ya tomé un vaso",Color.rgb(76,151,203));water.setOnClickListener(v->{Prefs.addWater(this,Prefs.glass(this));Toast.makeText(this,"Bien hecho 💜",Toast.LENGTH_SHORT).show();home();});LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(-1,-2);wp.topMargin=dp(12);quick.addView(water,wp);root.addView(quick);nav();}
 
-    @Override protected void onDestroy() {
-        if (tts != null) { tts.stop(); tts.shutdown(); }
-        super.onDestroy();
-    }
+    private void chat(){base("Habla con SUSANA","Puedes escribir o hablar normalmente. No necesitas saber hacer prompts.");LinearLayout c=card();LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.addView(avatar(58));TextView nm=tx("  SUSANA\n  Tu compañera siempre",16,purpleDark,true);head.addView(nm);c.addView(head);chatLog=tx("\nSusana: Hola, mi amor 💜. Cuéntame cómo estás o dime qué necesitas recordar.\n",16,text,false);chatLog.setLineSpacing(dp(5),1f);c.addView(chatLog);chatInput=new EditText(this);chatInput.setHint("Escribe como te salga...");chatInput.setTextColor(text);chatInput.setHintTextColor(Color.rgb(150,135,150));chatInput.setBackground(bg(soft,16));chatInput.setPadding(dp(14),dp(12),dp(14),dp(12));c.addView(chatInput);Button send=bt("Enviar",purple);send.setOnClickListener(v->send(chatInput.getText().toString()));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(9);c.addView(send,p);Button mic=bt("🎙️ Hablar",Color.rgb(198,100,142));mic.setOnClickListener(v->startVoice(1));LinearLayout.LayoutParams q=new LinearLayout.LayoutParams(-1,-2);q.topMargin=dp(8);c.addView(mic,q);root.addView(c);nav();}
+    private void append(String s){if(chatLog!=null)chatLog.append("\n"+s+"\n");}
+    private void send(String raw){String m=raw==null?"":raw.trim();if(m.isEmpty())return;if(chatInput!=null)chatInput.setText("");append("Tú: "+m);if(tryReminder(m))return;String key=getPreferences(MODE_PRIVATE).getString("geminiKey","");if(key.isEmpty()){String r=local(m);append("Susana: "+r);speak(r);}else gemini(m,key);}
+    private String local(String m){String x=m.toLowerCase(Locale.ROOT);if(x.contains("dolor")||x.contains("fibromialgia")||x.contains("cansad"))return "Te escucho, mi amor. Con dolor es válido bajar el ritmo. Si quieres, cuéntame qué necesitas hoy: desahogarte, organizar algo o simplemente compañía. Yo no reemplazo a tu médico ni a una psicóloga, pero sí puedo acompañarte.";if(x.contains("triste")||x.contains("llorar")||x.contains("sola"))return "Estoy aquí contigo 💜. No tienes que explicarlo perfecto. ¿Qué fue lo más pesado de hoy?";if(x.contains("bien")||x.contains("feliz")||x.contains("logr"))return "Eso merece celebrarse 💜. Cuéntame, ¿qué salió bien?";return "Te escucho, mi amor. Cuéntame un poquito más y vemos juntas qué puede ayudarte ahora.";}
+    private void gemini(String m,String key){append("Susana: pensando…");new Thread(()->{try{URL u=new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+key);HttpURLConnection c=(HttpURLConnection)u.openConnection();c.setRequestMethod("POST");c.setRequestProperty("Content-Type","application/json");c.setDoOutput(true);String prompt="Eres SUSANA, una compañera virtual cálida para una mujer adulta peruana con fibromialgia. Habla natural, breve, cariñosa y fuerte, como una figura materna de apoyo, pero NUNCA afirmes ser su madre fallecida ni una persona real. Escucha como un buen acompañante conversacional: valida emociones sin diagnosticar, ayuda a organizar pensamientos y sugiere apoyo profesional cuando corresponda. No reemplazas psicología ni medicina. Puedes llamarla 'mi amor' con moderación. Mensaje: "+m;JSONObject req=new JSONObject();JSONArray cont=new JSONArray();cont.put(new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",prompt))));req.put("contents",cont);try(OutputStream os=c.getOutputStream()){os.write(req.toString().getBytes(StandardCharsets.UTF_8));}BufferedReader br=new BufferedReader(new InputStreamReader(c.getInputStream(),StandardCharsets.UTF_8));StringBuilder sb=new StringBuilder();String l;while((l=br.readLine())!=null)sb.append(l);JSONObject res=new JSONObject(sb.toString());String r=res.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text").trim();runOnUiThread(()->{append("Susana: "+r);speak(r);});}catch(Exception e){runOnUiThread(()->{String r=local(m);append("Susana: "+r);speak(r);});}}).start();}
 
-    private GradientDrawable shape(int color, int radius) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color); g.setCornerRadius(dp(radius));
-        return g;
-    }
+    private void startVoice(int mode){voiceMode=mode;if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},AUDIO);return;}Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"es-PE");i.putExtra(RecognizerIntent.EXTRA_PROMPT,mode==2?"Dime qué quieres que te recuerde":"Te escucho...");try{startActivityForResult(i,SPEECH);}catch(Exception e){Toast.makeText(this,"No encontré reconocimiento de voz en este teléfono.",Toast.LENGTH_LONG).show();}}
+    @Override protected void onActivityResult(int r,int result,Intent data){super.onActivityResult(r,result,data);if(r==SPEECH&&result==RESULT_OK&&data!=null){ArrayList<String> a=data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);if(a!=null&&!a.isEmpty()){String s=a.get(0);if(voiceMode==2){if(!tryReminder(s))manual(s);}else{if(chatInput!=null)chatInput.setText(s);send(s);}}}}
 
-    private TextView text(String s, int sp, int color, boolean bold) {
-        TextView t = new TextView(this); t.setText(s); t.setTextSize(sp); t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return t;
-    }
+    private long parseWhen(String s){String x=s.toLowerCase(Locale.ROOT);Calendar c=Calendar.getInstance();Matcher w=Pattern.compile("en\\s+(\\d+)\\s+semana").matcher(x);Matcher d=Pattern.compile("en\\s+(\\d+)\\s+d[ií]a").matcher(x);if(w.find())c.add(Calendar.DAY_OF_MONTH,Integer.parseInt(w.group(1))*7);else if(d.find())c.add(Calendar.DAY_OF_MONTH,Integer.parseInt(d.group(1)));else if(x.contains("mañana"))c.add(Calendar.DAY_OF_MONTH,1);Matcher dm=Pattern.compile("(\\d{1,2})[/-](\\d{1,2})(?:[/-](\\d{2,4}))?").matcher(x);if(dm.find()){int day=Integer.parseInt(dm.group(1)),mon=Integer.parseInt(dm.group(2))-1,yr=dm.group(3)==null?c.get(Calendar.YEAR):Integer.parseInt(dm.group(3));if(yr<100)yr+=2000;c.set(yr,mon,day);}Matcher tm=Pattern.compile("(?:a las?|las)\\s*(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?").matcher(x);if(!tm.find())return -1;int h=Integer.parseInt(tm.group(1)),m=tm.group(2)==null?0:Integer.parseInt(tm.group(2));String ap=tm.group(3);if("pm".equals(ap)&&h<12)h+=12;if("am".equals(ap)&&h==12)h=0;c.set(Calendar.HOUR_OF_DAY,h);c.set(Calendar.MINUTE,m);c.set(Calendar.SECOND,0);c.set(Calendar.MILLISECOND,0);if(c.getTimeInMillis()<=System.currentTimeMillis()&&!x.contains("mañana")&&!w.find()&&!d.find()&&!dm.find())c.add(Calendar.DAY_OF_MONTH,1);return c.getTimeInMillis();}
+    private int importance(String x){x=x.toLowerCase(Locale.ROOT);if(x.contains("essalud")||x.contains("cita")||x.contains("médic")||x.contains("medic")||x.contains("hospital")||x.contains("trámite")||x.contains("pago")||x.contains("examen"))return 3;if(x.contains("importante")||x.contains("medicina")||x.contains("reunión"))return 2;return 1;}
+    private boolean tryReminder(String s){String x=s.toLowerCase(Locale.ROOT);if(!(x.contains("recu")||x.contains("avisa")||x.contains("recordatorio")||x.contains("alarma")))return false;long when=parseWhen(s);if(when<0)return false;String title=s.replaceAll("(?i)mamita|susana|recu[eé]rdame|hazme recordar|av[ií]same|ponme|una alarma|recordatorio"," ").replaceAll("\\s+"," ").trim();int imp=importance(s);long id=System.currentTimeMillis();ReminderStore.add(this,id,title,when,imp);SmartReminderScheduler.schedule(this,id,title,when,imp);String whenText=new SimpleDateFormat("dd/MM 'a las' HH:mm",Locale.getDefault()).format(new Date(when));String r="Listo, mi amor 💜. Te recordaré “"+title+"” el "+whenText+(imp>=3?". Como es importante, también te avisaré un día antes y tres horas antes.":imp==2?". También te avisaré tres horas antes.":".");if(chatLog!=null)append("Susana: "+r);Toast.makeText(this,"Recordatorio guardado 💜",Toast.LENGTH_LONG).show();speak(r);return true;}
+    private void manual(String seed){final EditText e=new EditText(this);e.setHint("Ejemplo: cita en EsSalud 20/08 a las 9 pm");e.setText(seed);new AlertDialog.Builder(this).setTitle("¿Qué quieres recordar?").setView(e).setPositiveButton("Guardar",(d,w)->{String s="recuérdame "+e.getText().toString();if(!tryReminder(s))Toast.makeText(this,"No pude encontrar la hora. Prueba: 20/08 a las 9 pm",Toast.LENGTH_LONG).show();}).setNegativeButton("Cancelar",null).show();}
 
-    private Button btn(String label, int color) {
-        Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setTextColor(Color.WHITE);
-        b.setTextSize(16); b.setTypeface(Typeface.DEFAULT, Typeface.BOLD); b.setBackground(shape(color, 18)); b.setMinHeight(dp(56));
-        return b;
-    }
-
-    private LinearLayout card() {
-        LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(dp(18),dp(18),dp(18),dp(18)); c.setBackground(shape(card,24));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,0,0,dp(14)); c.setLayoutParams(lp); return c;
-    }
-
-    private void base(String title, String subtitle) {
-        ScrollView sv = new ScrollView(this); sv.setFillViewport(true); sv.setBackgroundColor(bg);
-        root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(18),dp(24),dp(18),dp(110));
-        sv.addView(root); root.addView(text(title, 29, Color.WHITE, true));
-        TextView sub = text(subtitle, 14, Color.rgb(176,183,215), false); sub.setPadding(0,dp(4),0,dp(18)); root.addView(sub);
-        setContentView(sv);
-        addBottomNav();
-    }
-
-    private void addBottomNav() {
-        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setPadding(dp(8),dp(8),dp(8),dp(8)); nav.setBackground(shape(Color.rgb(12,15,44),22));
-        String[] names = {"⌂ Inicio","💬 Hablar","⏰ Recordatorios","👤 Perfil"};
-        for (int i=0;i<names.length;i++) {
-            Button b = btn(names[i], Color.rgb(35,39,76)); b.setTextSize(12);
-            final int k=i; b.setOnClickListener(v -> { if(k==0)showHome(); else if(k==1)showChat(); else if(k==2)showReminders(); else showProfile(); });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(52),1); lp.setMargins(dp(2),0,dp(2),0); nav.addView(b,lp);
-        }
-        root.addView(nav);
-    }
-
-    private void showHome() {
-        base("Siempre 💜", "Tu compañera para hablar, recordar y acompañarte durante el día.");
-        LinearLayout hero = card();
-        TextView avatar = text("👵🏻", 78, Color.WHITE, false); avatar.setGravity(Gravity.CENTER); hero.addView(avatar);
-        TextView hello = text("Hola, mi amor 💜\n¿Qué quieres hacer hoy?", 22, Color.WHITE, true); hello.setGravity(Gravity.CENTER); hero.addView(hello);
-        TextView hint = text("Puedes hablarme de tu día, crear un recordatorio por voz o revisar tus alarmas.",14,Color.rgb(188,195,225),false); hint.setGravity(Gravity.CENTER); hint.setPadding(0,dp(10),0,dp(18)); hero.addView(hint);
-        Button talk = btn("🎙️ Hablar conmigo", purple); talk.setOnClickListener(v -> showChat()); hero.addView(talk);
-        Button rem = btn("⏰ Crear recordatorio", blue); LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(-1,-2); rlp.topMargin=dp(10); rem.setOnClickListener(v -> startVoiceReminder()); hero.addView(rem,rlp);
-        root.addView(hero,0);
-
-        LinearLayout today=card(); today.addView(text("Mi día",20,Color.WHITE,true));
-        today.addView(text("💧 Agua: " + Prefs.todayMl(this) + " / " + Prefs.targetMl(this) + " ml",16,Color.rgb(165,204,255),true));
-        today.addView(text("⏰ " + ReminderStore.count(this) + " recordatorio(s) guardados",15,Color.rgb(205,190,255),false));
-        Button water=btn("✓ Tomé un vaso de agua", Color.rgb(35,106,186)); water.setOnClickListener(v->{Prefs.addWater(this,Prefs.glass(this));Toast.makeText(this,"+"+Prefs.glass(this)+" ml 💧",Toast.LENGTH_SHORT).show();showHome();});
-        LinearLayout.LayoutParams wlp=new LinearLayout.LayoutParams(-1,-2);wlp.topMargin=dp(12);today.addView(water,wlp);root.addView(today,1);
-    }
-
-    private void showChat() {
-        base("Habla conmigo", "Escribe o mantén el micrófono. Puedo responderte con voz.");
-        LinearLayout box=card();
-        chatLog=text("Siempre: Hola 💜. Estoy aquí contigo. Cuéntame lo que quieras.\n",16,Color.WHITE,false); chatLog.setLineSpacing(dp(5),1f); box.addView(chatLog);
-        chatInput=new EditText(this); chatInput.setHint("Escribe tu mensaje…"); chatInput.setHintTextColor(Color.rgb(135,143,178)); chatInput.setTextColor(Color.WHITE); chatInput.setBackground(shape(Color.rgb(30,34,70),16)); chatInput.setPadding(dp(14),dp(12),dp(14),dp(12));
-        LinearLayout.LayoutParams ilp=new LinearLayout.LayoutParams(-1,-2);ilp.topMargin=dp(12);box.addView(chatInput,ilp);
-        Button send=btn("Enviar",purple); send.setOnClickListener(v->sendChat(chatInput.getText().toString())); LinearLayout.LayoutParams slp=new LinearLayout.LayoutParams(-1,-2);slp.topMargin=dp(10);box.addView(send,slp);
-        Button mic=btn("🎙️ Hablar por voz",pink); mic.setOnClickListener(v->{speechMode=1;startSpeech();}); LinearLayout.LayoutParams mlp=new LinearLayout.LayoutParams(-1,-2);mlp.topMargin=dp(10);box.addView(mic,mlp);
-        root.addView(box,0);
-    }
-
-    private void sendChat(String msg) {
-        if(msg==null||msg.trim().isEmpty())return; msg=msg.trim();
-        if(chatInput!=null)chatInput.setText("");
-        appendChat("Tú: "+msg);
-        if (tryReminderFromText(msg)) return;
-        String key=getPreferences(MODE_PRIVATE).getString("geminiKey","");
-        if(!key.isEmpty()) askGemini(msg,key); else {
-            String reply=localReply(msg); appendChat("Siempre: "+reply); speak(reply);
-        }
-    }
-
-    private void appendChat(String s){ if(chatLog!=null)chatLog.append("\n"+s+"\n"); }
-
-    private String localReply(String m) {
-        String x=m.toLowerCase(Locale.ROOT);
-        if(x.contains("triste")||x.contains("mal")||x.contains("cansad")) return "Te escucho. Si quieres, cuéntame qué fue lo más pesado de hoy. No tienes que resumirlo bonito.";
-        if(x.contains("feliz")||x.contains("bien")||x.contains("logré")) return "Me alegra escucharte así 💜. Cuéntame qué pasó; quiero celebrarlo contigo.";
-        if(x.contains("hola")) return "Hola 💜. Aquí estoy. ¿Cómo estuvo tu día?";
-        if(x.contains("agua")) return "Si quieres puedo recordarte tomar agua. Solo dime una hora, por ejemplo: recuérdame tomar agua a las 3 de la tarde.";
-        return "Te estoy escuchando 💜. Cuéntame un poco más; ¿qué fue lo que más te quedó dando vueltas?";
-    }
-
-    private void askGemini(String msg,String key) {
-        appendChat("Siempre: pensando…");
-        new Thread(() -> {
-            try {
-                URL u=new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+key);
-                HttpURLConnection c=(HttpURLConnection)u.openConnection(); c.setRequestMethod("POST"); c.setRequestProperty("Content-Type","application/json"); c.setDoOutput(true); c.setConnectTimeout(15000); c.setReadTimeout(30000);
-                JSONObject req=new JSONObject(); JSONArray contents=new JSONArray(); JSONObject content=new JSONObject(); JSONArray parts=new JSONArray();
-                String system="Eres Siempre, una compañera virtual cálida. Habla en español natural de Perú, breve, cariñosa sin fingir ser humana ni una persona fallecida. Escucha, conversa y ayuda. No digas que eres la abuela del usuario. Mensaje: "+msg;
-                parts.put(new JSONObject().put("text",system)); content.put("parts",parts); contents.put(content); req.put("contents",contents);
-                try(OutputStream os=c.getOutputStream()){os.write(req.toString().getBytes(StandardCharsets.UTF_8));}
-                BufferedReader br=new BufferedReader(new InputStreamReader(c.getInputStream(),StandardCharsets.UTF_8)); StringBuilder sb=new StringBuilder(); String line; while((line=br.readLine())!=null)sb.append(line);
-                JSONObject res=new JSONObject(sb.toString()); String reply=res.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text").trim();
-                runOnUiThread(()->{ appendChat("Siempre: "+reply); speak(reply); });
-            } catch(Exception e) { runOnUiThread(()->{String r=localReply(msg);appendChat("Siempre: "+r);speak(r);}); }
-        }).start();
-    }
-
-    private void startVoiceReminder(){ speechMode=2; startSpeech(); }
-    private void startSpeech(){
-        if(Build.VERSION.SDK_INT>=23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ_AUDIO);return;}
-        Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"es-PE"); i.putExtra(RecognizerIntent.EXTRA_PROMPT, speechMode==2?"Di el recordatorio y la hora":"Te escucho…");
-        try{startActivityForResult(i,REQ_SPEECH);}catch(Exception e){Toast.makeText(this,"El reconocimiento de voz no está disponible.",Toast.LENGTH_LONG).show();}
-    }
-
-    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
-        super.onActivityResult(requestCode,resultCode,data); if(requestCode==REQ_SPEECH&&resultCode==RESULT_OK&&data!=null){ArrayList<String> r=data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);if(r!=null&&!r.isEmpty()){String spoken=r.get(0);if(speechMode==2){if(!tryReminderFromText(spoken)) showManualReminder(spoken);}else{if(chatInput!=null)chatInput.setText(spoken);sendChat(spoken);}}}
-    }
-
-    private boolean tryReminderFromText(String phrase){
-        String lower=phrase.toLowerCase(Locale.ROOT); if(!(lower.contains("recuérd")||lower.contains("avis")||lower.contains("alarma")))return false;
-        int hour=-1,minute=0; java.util.regex.Matcher m=java.util.regex.Pattern.compile("(?:a las|a la|las)\\s+(\\d{1,2})(?::(\\d{2}))?").matcher(lower);
-        if(m.find()){hour=Integer.parseInt(m.group(1));if(m.group(2)!=null)minute=Integer.parseInt(m.group(2)); if(lower.contains("tarde")||lower.contains("noche")){if(hour<12)hour+=12;} if(lower.contains("mañana")&&hour==12)hour=0;}
-        if(hour<0||hour>23){return false;}
-        String title=phrase.replaceAll("(?i)recu[eé]rdame|av[ií]same|pon una alarma|alarma"," ").replaceAll("(?i)a las?\\s+\\d{1,2}(?::\\d{2})?"," ").replaceAll("(?i)de la tarde|de la mañana|de la noche"," ").replaceAll("\\s+"," ").trim();
-        if(title.isEmpty())title="Recordatorio"; scheduleReminder(title,hour,minute,true); String reply="Listo 💜. Te recordaré “"+title+"” a las "+String.format(Locale.getDefault(),"%02d:%02d",hour,minute)+"."; if(chatLog!=null)appendChat("Siempre: "+reply);speak(reply); return true;
-    }
-
-    private void scheduleReminder(String title,int hour,int minute,boolean daily){
-        Calendar cal=Calendar.getInstance();cal.set(Calendar.HOUR_OF_DAY,hour);cal.set(Calendar.MINUTE,minute);cal.set(Calendar.SECOND,0);cal.set(Calendar.MILLISECOND,0);if(cal.getTimeInMillis()<=System.currentTimeMillis())cal.add(Calendar.DAY_OF_MONTH,1);
-        long id=System.currentTimeMillis(); ReminderStore.add(this,id,title,hour,minute,daily,true); scheduleAlarm(id,title,cal.getTimeInMillis()); Toast.makeText(this,"Recordatorio creado 💜",Toast.LENGTH_SHORT).show();
-    }
-
-    private void scheduleAlarm(long id,String title,long when){
-        AlarmManager am=(AlarmManager)getSystemService(ALARM_SERVICE); Intent i=new Intent(this,CompanionAlarmReceiver.class); i.putExtra("id",id);i.putExtra("title",title); PendingIntent pi=PendingIntent.getBroadcast(this,(int)(id%Integer.MAX_VALUE),i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        if(am!=null){try{if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S&&am.canScheduleExactAlarms())am.setAlarmClock(new AlarmManager.AlarmClockInfo(when,null),pi);else if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,when,pi);else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,when,pi);}catch(Exception e){am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,when,pi);}}
-    }
-
-    private void showManualReminder(String seed){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(18),dp(8),dp(18),0); EditText title=new EditText(this);title.setHint("¿Qué quieres recordar?");title.setText(seed); EditText time=new EditText(this);time.setHint("Hora 24h, ej. 15:30");box.addView(title);box.addView(time);
-        new AlertDialog.Builder(this).setTitle("Nuevo recordatorio").setView(box).setPositiveButton("Crear",(d,w)->{try{String[]p=time.getText().toString().split(":");scheduleReminder(title.getText().toString(),Integer.parseInt(p[0]),p.length>1?Integer.parseInt(p[1]):0,true);showReminders();}catch(Exception e){Toast.makeText(this,"Usa una hora como 15:30",Toast.LENGTH_LONG).show();}}).setNegativeButton("Cancelar",null).show();
-    }
-
-    private void showReminders(){
-        base("Mis recordatorios", "Crea alarmas hablando o de forma manual.");
-        LinearLayout top=card();Button voice=btn("🎙️ Crear por voz",purple);voice.setOnClickListener(v->startVoiceReminder());top.addView(voice);Button manual=btn("＋ Añadir manualmente",blue);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(10);manual.setOnClickListener(v->showManualReminder(""));top.addView(manual,lp);root.addView(top,0);
-        JSONArray arr=ReminderStore.all(this); for(int i=arr.length()-1;i>=0;i--){try{JSONObject o=arr.getJSONObject(i);LinearLayout c=card();c.addView(text("⏰  "+o.getString("title"),18,Color.WHITE,true));c.addView(text(String.format(Locale.getDefault(),"Todos los días · %02d:%02d",o.getInt("hour"),o.getInt("minute")),14,Color.rgb(177,186,219),false));root.addView(c,1);}catch(Exception ignored){}}
-        LinearLayout water=card();water.addView(text("💧 Alarmas de agua",19,Color.WHITE,true));water.addView(text("La función original de Agüita sigue disponible con alarma fuerte, vibración y pantalla completa.",14,Color.rgb(177,186,219),false));Button settings=btn("Configurar agua",Color.rgb(35,106,186));settings.setOnClickListener(v->showWaterDialog());LinearLayout.LayoutParams x=new LinearLayout.LayoutParams(-1,-2);x.topMargin=dp(10);water.addView(settings,x);root.addView(water,1);
-    }
-
-    private void showWaterDialog(){
-        String state=Prefs.enabled(this)?"activadas":"desactivadas"; new AlertDialog.Builder(this).setTitle("Recordatorios de agua").setMessage("Actualmente están "+state+".\n\nObjetivo: "+Prefs.targetMl(this)+" ml/día\nVaso: "+Prefs.glass(this)+" ml\nIntervalo: "+Prefs.interval(this)+" min").setPositiveButton(Prefs.enabled(this)?"Desactivar":"Activar",(d,w)->{Prefs.p(this).edit().putBoolean("enabled",!Prefs.enabled(this)).apply();if(Prefs.enabled(this))AlarmScheduler.scheduleNext(this);else AlarmScheduler.cancelAll(this);showReminders();}).setNeutralButton("Probar alarma",(d,w)->{try{AlarmService.start(this,false);startActivity(new Intent(this,AlarmActivity.class));}catch(Exception ignored){}}).setNegativeButton("Cerrar",null).show();
-    }
-
-    private void showProfile(){
-        base("Mi perfil", "Configura la voz y, si quieres, conecta una IA generativa."); LinearLayout c=card();c.addView(text("👵🏻  Siempre",25,Color.WHITE,true));c.addView(text("Compañera virtual · voz + recordatorios",14,Color.rgb(180,187,216),false));
-        Button key=btn("✨ Configurar Gemini API",purple); key.setOnClickListener(v->editApiKey());LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(15);c.addView(key,lp);
-        Button test=btn("🔊 Probar voz",pink);test.setOnClickListener(v->speak("Hola. Aquí estoy contigo. ¿Cómo estuvo tu día?"));LinearLayout.LayoutParams tlp=new LinearLayout.LayoutParams(-1,-2);tlp.topMargin=dp(10);c.addView(test,tlp); root.addView(c,0);
-        LinearLayout privacy=card();privacy.addView(text("Privacidad",19,Color.WHITE,true));privacy.addView(text("Sin clave de Gemini, el chat usa respuestas locales. Si añades una clave, tus mensajes se envían a Google Gemini para generar la respuesta. La clave se guarda solo en este teléfono.",14,Color.rgb(180,187,216),false));root.addView(privacy,1);
-    }
-
-    private void editApiKey(){EditText e=new EditText(this);e.setHint("AIza…");e.setText(getPreferences(MODE_PRIVATE).getString("geminiKey",""));new AlertDialog.Builder(this).setTitle("Gemini API key").setMessage("No la subas al repositorio. Se guardará localmente en este celular.").setView(e).setPositiveButton("Guardar",(d,w)->getPreferences(MODE_PRIVATE).edit().putString("geminiKey",e.getText().toString().trim()).apply()).setNegativeButton("Cancelar",null).show();}
-    private void speak(String s){if(tts!=null)tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"siempre");}
-    private void requestNeededPermissions(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},8001);}
+    private void reminders(){base("Mis recordatorios","Susana avisa con más anticipación cuando detecta algo importante.");LinearLayout c=card();c.addView(tx(ReminderStore.summary(this),16,text,false));Button b=bt("🎙️ Crear hablando",purple);b.setOnClickListener(v->startVoice(2));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(8);c.addView(b,p);Button m=bt("✍️ Crear escribiendo",blue);m.setOnClickListener(v->manual(""));LinearLayout.LayoutParams q=new LinearLayout.LayoutParams(-1,-2);q.topMargin=dp(8);c.addView(m,q);root.addView(c);nav();}
+    private void profile(){base("Perfil y ajustes","Lo esencial, sin menús complicados.");LinearLayout c=card();c.setGravity(Gravity.CENTER_HORIZONTAL);c.addView(avatar(110));TextView n=tx("SUSANA\nTu compañera siempre",20,purpleDark,true);n.setGravity(Gravity.CENTER);n.setPadding(0,dp(10),0,dp(12));c.addView(n);c.addView(tx("🎂 Te felicitará cada 6 de diciembre.\n🔊 Voz más pausada y cálida usando la voz del teléfono.\n🔐 La clave de IA se guarda solo en este celular.\n🩺 Acompaña y organiza; no sustituye atención médica o psicológica.",15,text,false));Button key=bt("✨ Conectar IA para conversar mejor",purple);key.setOnClickListener(v->keyDialog());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(14);c.addView(key,p);root.addView(c);nav();}
+    private void keyDialog(){EditText e=new EditText(this);e.setHint("Pega tu API Key de Gemini");e.setText(getPreferences(MODE_PRIVATE).getString("geminiKey",""));new AlertDialog.Builder(this).setTitle("IA de Susana").setMessage("La clave queda guardada localmente en este teléfono. No la subimos al repositorio.").setView(e).setPositiveButton("Guardar",(d,w)->{getPreferences(MODE_PRIVATE).edit().putString("geminiKey",e.getText().toString().trim()).apply();Toast.makeText(this,"Listo 💜",Toast.LENGTH_SHORT).show();}).setNegativeButton("Cancelar",null).show();}
 }
